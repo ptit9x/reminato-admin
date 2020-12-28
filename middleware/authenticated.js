@@ -1,0 +1,10 @@
+export default function ({ store, redirect }) {
+  // If the user is not authenticated
+  if (!store.state.token) {
+    return redirect('/login')
+  }
+
+  if (!store.state.fullName) {
+    store.dispatch('getInfo')
+  }
+}

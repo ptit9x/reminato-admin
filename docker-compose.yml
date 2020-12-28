@@ -1,0 +1,12 @@
+version: '3'
+services:
+  admin:
+    container_name: 'reminato_admin'
+    hostname: 'reminato_admin'
+    image: 'huynhdn/reminato_admin_dev:1.0'
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 3000:80
