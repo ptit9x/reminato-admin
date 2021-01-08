@@ -1,0 +1,109 @@
+default:
+  image: node:14.15.4-alpine3.10
+  before_script:
+    - if [ -z "$DOCKER_USERNAME" ]; then echo "The DOCKER_USERNAME variable has not been set!"; exit 1; fi
+    - if [ -z "$DOCKER_PASSWORD" ]; then echo "The DOCKER_PASSWORD variable has not been set!"; exit 1; fi
+stages:
+  - build
+  - validate
+  - publish
+  - deploy
+variables:
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_DRIVER: overlay2
+# build steps
+install dev:
+  stage: build
+  script:
+    - cp .env.dev .env
+    - npm install
+    - npm run build
+    - npm run generate
+  artifacts:
+    paths:
+      - node_modules/
+      - dist/
+    expire_in: 1 week
+  only:
+    - develop
+install prod:
+  stage: build
+  script:
+    - cp .env.prod .prod
+    - npm install
+    - npm run build
+    - npm run generate
+  artifacts:
+    paths:
+      - node_modules/
+      - dist/
+    expire_in: 1 week
+  only:
+    - master
+code lint:
+  stage: validate
+  script:
+    - npm run lint
+  dependencies:
+    - install dev
+    - install prod
+build image development:
+  stage: publish
+  image:
+    name: docker/compose:latest
+  services:
+    - docker:dind
+  # before_script:
+  #   - docker version
+  #   - docker-compose version
+  script:
+    - docker-compose -f docker-compose-dev.yml build
+    - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD docker.io
+    - docker push huynhdn/tbizswap_admin_dev:1.0
+    - docker system prune -f
+  dependencies:
+    - install dev
+    - install prod
+  only:
+    - develop
+build image production:
+  stage: publish
+  image:
+    name: docker/compose:latest
+  services:
+    - docker:dind
+  script:
+    - docker-compose -f docker-compose-prod.yml
+    - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD docker.io
+    - docker push huynhdn/tbizswap_admin_prod:1.0
+    - docker system prune -f
+  dependencies:
+    - install dev
+    - install prod
+  only:
+    - master
+deploy development:
+  stage: deploy
+  variables:
+    GIT_STRATEGY: none
+  before_script: 
+    - apk update && apk add openssh-client bash
+    - eval $(ssh-agent -s)
+    - bash -c 'ssh-add <(echo "$SSH_PRIVATE_KEY")'
+    - mkdir -p ~/.ssh
+    - ssh-keyscan -H $SSH_SERVER_IP >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script: 
+    - echo "Try to connect to server"
+    - ssh root@$SSH_SERVER_IP -t 'cd /opt/deploy; docker-compose pull; docker-compose up -d; docker restart tbizswap_proxy;'
+  only:
+    - develop
+deploy production:
+  stage: deploy
+  script: 
+    - echo "deploy production"
+  dependencies:
+    - install dev
+    - install prod
+  only:
+    - master
